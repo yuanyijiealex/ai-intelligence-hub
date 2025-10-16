@@ -1,0 +1,13 @@
+# 关键词告警配置（示例）。可按需增删或使用正则扩展。
+alerts:
+  - keyword: "OpenAI"
+    tags: [openai]
+  - keyword: "Google"
+    tags: [google]
+  - keyword: "Hugging Face"
+    tags: [hf]
+  - keyword: "arXiv"
+    tags: [arxiv]
+  - keyword: "LLM"
+    tags: [llm]
+

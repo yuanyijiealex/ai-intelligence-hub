@@ -285,14 +285,15 @@ def main() -> int:
             return "论文与基准"
         if any(k in name_l for k in ["arxiv", "papers with code", "paperswithcode", "neurips", "iclr", "icml"]):
             return "论文与基准"
-        if {"company"} & tset:
-            return "公司与产品"
+        # 商业与生态：公司/商业/合作/投融资/生态伙伴等
+        if {"company", "business", "ecosystem", "partner", "partnership", "market", "pricing", "investment", "vc", "funding", "merger", "acquisition", "m&a", "商业", "生态", "合作", "融资", "并购"} & tset:
+            return "商业与生态"
         # 工程与工具链：工程实践/工具/框架/SDK/DevOps/CI/CD/构建等
         if {"tools", "tool", "framework", "sdk", "devtools", "engineering", "infra", "ci", "build", "ops", "devops"} & tset:
             return "工程与工具链"
         return "其他与综合"
 
-    columns_order = ["大模型与平台", "开源生态", "论文与基准", "公司与产品", "工程与工具链", "其他与综合"]
+    columns_order = ["大模型与平台", "开源生态", "论文与基准", "工程与工具链", "商业与生态", "其他与综合"]
     bucket: Dict[str, List[Dict[str, Any]]] = {k: [] for k in columns_order}
     for src_name, items in collected:
         tags = source_tags_map.get(src_name, [])

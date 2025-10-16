@@ -48,15 +48,76 @@ def plain_text(s: str, max_len: int = 400) -> str:
     return (s[: max_len - 1] + "…") if len(s) > max_len else s
 
 
+def load_alert_keywords(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return data.get("alerts", [])
+
+
+def pick_highlights(
+    grouped_items: List[Tuple[str, List[Dict[str, Any]]]],
+    alerts: List[Dict[str, Any]],
+    limit: int = 5,
+) -> List[str]:
+    # Flatten items with source name
+    all_items: List[Tuple[Dict[str, Any], str]] = []
+    for source_name, items in grouped_items:
+        for it in items:
+            all_items.append((it, source_name))
+
+    # Build lower-case keyword list
+    keys: List[Tuple[str, List[str]]] = []  # (keyword, tags)
+    for a in alerts:
+        k = str(a.get("keyword", "")).strip()
+        if not k:
+            continue
+        tags = a.get("tags") or []
+        keys.append((k.lower(), tags))
+
+    scored: List[Tuple[int, datetime, Dict[str, Any], str, List[str]]] = []
+    for it, src in all_items:
+        text = f"{it.get('title','')} {it.get('summary','')}".lower()
+        matched_keywords: List[str] = []
+        for k, _tags in keys:
+            if k and k in text:
+                matched_keywords.append(k)
+        score = len(set(matched_keywords))
+        if score > 0:
+            when = it.get("dt") or now_utc()
+            scored.append((score, when, it, src, matched_keywords))
+
+    # Sort by score desc then time desc
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    top = scored[:limit]
+
+    lines: List[str] = []
+    for score, when, it, src, mkeys in top:
+        title = it.get("title") or "(无标题)"
+        link = it.get("link") or ""
+        tag_str = ", ".join(sorted(set(mkeys))) if mkeys else ""
+        time_str = when.strftime("%Y-%m-%d %H:%M UTC")
+        extra = f" · 关键词: {tag_str}" if tag_str else ""
+        lines.append(f"- [{title}]({link}) · 来源: {src} · 时间: {time_str}{extra}")
+    return lines
+
+
 def make_markdown_report(
     date_str: str,
     grouped_items: List[Tuple[str, List[Dict[str, Any]]]],
     window_hours: int,
+    highlights: Optional[List[str]] = None,
 ) -> str:
     lines: List[str] = []
     lines.append(f"# AI 情报日报 - {date_str}")
     lines.append("")
     lines.append(f"> 抓取窗口：近 {window_hours} 小时（按 UTC 过滤）")
+    lines.append("")
+    lines.append("## 今日要点")
+    if highlights:
+        lines.extend(highlights)
+    else:
+        lines.append("- （自动摘要占位）")
     total = sum(len(items) for _, items in grouped_items)
     lines.append("")
     lines.append(f"共收录 {total} 条更新，按来源分组如下：")
@@ -168,12 +229,16 @@ def main() -> int:
             })
         collected.append((name, items))
 
+    # highlights by keyword alerts
+    alerts = load_alert_keywords(Path("config/alerts_keywords.yml"))
+    highlights = pick_highlights(collected, alerts, limit=5)
+
     # output file uses CST date for user friendliness
     _, cst_date = today_strings()
     out_dir = Path("daily_reports")
     ensure_dir(str(out_dir))
     out_file = out_dir / f"{cst_date}.md"
-    content = make_markdown_report(cst_date, collected, window_hours)
+    content = make_markdown_report(cst_date, collected, window_hours, highlights=highlights if highlights else None)
     out_file.write_text(content, encoding="utf-8")
 
     update_readme_latest(Path("README.md"), cst_date)

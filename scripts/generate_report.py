@@ -20,6 +20,17 @@ def load_sources(config_path: Path) -> List[Dict[str, Any]]:
     return data.get("sources", [])
 
 
+def build_source_tags_map(sources: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    m: Dict[str, List[str]] = {}
+    for s in sources:
+        name = s.get("name")
+        if not name:
+            continue
+        tags = s.get("tags") or []
+        m[str(name)] = list(tags)
+    return m
+
+
 def parse_entry_datetime(entry: Dict[str, Any]) -> Optional[datetime]:
     for key in ("published_parsed", "updated_parsed"):
         if entry.get(key):
@@ -107,6 +118,7 @@ def make_markdown_report(
     grouped_items: List[Tuple[str, List[Dict[str, Any]]]],
     window_hours: int,
     highlights: Optional[List[str]] = None,
+    column_groups: Optional[List[Tuple[str, List[Dict[str, Any]]]]] = None,
 ) -> str:
     lines: List[str] = []
     lines.append(f"# AI 情报日报 - {date_str}")
@@ -119,6 +131,27 @@ def make_markdown_report(
     else:
         lines.append("- （自动摘要占位）")
     total = sum(len(items) for _, items in grouped_items)
+    lines.append("")
+    # 资讯分栏
+    lines.append("## 资讯分栏")
+    if column_groups:
+        for col_name, items in column_groups:
+            if not items:
+                continue
+            lines.append(f"### {col_name} ({len(items)})")
+            lines.append("")
+            for it in items:
+                title = it.get("title") or "(无标题)"
+                link = it.get("link") or ""
+                src = it.get("source") or ""
+                dt = it.get("dt")
+                dt_str = dt.strftime("%Y-%m-%d %H:%M UTC") if isinstance(dt, datetime) else ""
+                lines.append(f"- [{title}]({link}) · 来源: {src}{(' · ' + dt_str) if dt_str else ''}")
+            lines.append("")
+    else:
+        lines.append("（暂无分栏数据）\n")
+
+    # 来源分组
     lines.append("")
     lines.append(f"共收录 {total} 条更新，按来源分组如下：")
     lines.append("")
@@ -194,6 +227,7 @@ def main() -> int:
 
     # sources
     sources = load_sources(Path("config/sources.yml"))
+    source_tags_map = build_source_tags_map(sources)
 
     collected: List[Tuple[str, List[Dict[str, Any]]]] = []
     for src in sources:
@@ -233,12 +267,44 @@ def main() -> int:
     alerts = load_alert_keywords(Path("config/alerts_keywords.yml"))
     highlights = pick_highlights(collected, alerts, limit=5)
 
+    # build column groups by source tags
+    def categorize(tags: List[str]) -> str:
+        tset = {t.lower() for t in (tags or [])}
+        if {"research", "arxiv"} & tset:
+            return "研究与论文"
+        if {"company"} & tset:
+            return "公司与产品"
+        if {"tools"} & tset:
+            return "工具与框架"
+        return "其他与综合"
+
+    columns_order = ["研究与论文", "公司与产品", "工具与框架", "其他与综合"]
+    bucket: Dict[str, List[Dict[str, Any]]] = {k: [] for k in columns_order}
+    for src_name, items in collected:
+        tags = source_tags_map.get(src_name, [])
+        col = categorize(tags)
+        for it in items:
+            # copy minimal fields + source tag
+            bucket[col].append({
+                "title": it.get("title"),
+                "link": it.get("link"),
+                "dt": it.get("dt"),
+                "source": src_name,
+            })
+    column_groups = [(name, bucket.get(name, [])) for name in columns_order]
+
     # output file uses CST date for user friendliness
     _, cst_date = today_strings()
     out_dir = Path("daily_reports")
     ensure_dir(str(out_dir))
     out_file = out_dir / f"{cst_date}.md"
-    content = make_markdown_report(cst_date, collected, window_hours, highlights=highlights if highlights else None)
+    content = make_markdown_report(
+        cst_date,
+        collected,
+        window_hours,
+        highlights=highlights if highlights else None,
+        column_groups=column_groups,
+    )
     out_file.write_text(content, encoding="utf-8")
 
     update_readme_latest(Path("README.md"), cst_date)

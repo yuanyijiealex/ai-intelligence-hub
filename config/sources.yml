@@ -1,0 +1,37 @@
+# 可按需增删；支持类型：rss
+sources:
+  - name: OpenAI Blog
+    type: rss
+    url: https://openai.com/blog/rss.xml
+    tags: [ai, company]
+
+  - name: Google AI Blog
+    type: rss
+    url: https://blog.research.google/atom.xml
+    tags: [ai, research]
+
+  - name: Hugging Face Blog
+    type: rss
+    url: https://huggingface.co/blog/feed.xml
+    tags: [ai, tools]
+
+  - name: Meta AI Blog
+    type: rss
+    url: https://ai.facebook.com/blog/feed/
+    tags: [ai, company]
+
+  - name: Stability AI Blog
+    type: rss
+    url: https://stability.ai/blog/rss.xml
+    tags: [ai, company]
+
+  - name: arXiv cs.AI
+    type: rss
+    url: https://arxiv.org/rss/cs.AI
+    tags: [research, arxiv]
+
+  - name: arXiv cs.CL
+    type: rss
+    url: https://arxiv.org/rss/cs.CL
+    tags: [research, arxiv]
+

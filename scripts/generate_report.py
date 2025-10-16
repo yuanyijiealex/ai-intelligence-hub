@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 import argparse
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import requests
 import feedparser
 import yaml
-from bs4 import BeautifulSoup
-from dotenv import load_dotenv
 
-from utils import ensure_dir, get_env, http_get, normalize_url, utcnow
+from utils import ensure_dir, now_utc, today_strings
 
 
 def load_sources(config_path: Path) -> List[Dict[str, Any]]:
@@ -21,12 +21,11 @@ def load_sources(config_path: Path) -> List[Dict[str, Any]]:
 
 
 def parse_entry_datetime(entry: Dict[str, Any]) -> Optional[datetime]:
-    # Prefer published -> updated -> None
     for key in ("published_parsed", "updated_parsed"):
         if entry.get(key):
             t = entry[key]
             try:
-                dt = datetime(
+                return datetime(
                     year=t.tm_year,
                     month=t.tm_mon,
                     day=t.tm_mday,
@@ -35,30 +34,29 @@ def parse_entry_datetime(entry: Dict[str, Any]) -> Optional[datetime]:
                     second=t.tm_sec,
                     tzinfo=timezone.utc,
                 )
-                return dt
             except Exception:
                 continue
     return None
 
 
-def extract_text(html: str, max_len: int = 400) -> str:
-    soup = BeautifulSoup(html or "", "html.parser")
-    text = " ".join(soup.get_text(" ").split())
-    if len(text) > max_len:
-        return text[: max_len - 1] + "…"
-    return text
+TAG_RE = re.compile(r"<[^>]+>")
+
+
+def plain_text(s: str, max_len: int = 400) -> str:
+    s = TAG_RE.sub(" ", s or "")
+    s = re.sub(r"\s+", " ", s).strip()
+    return (s[: max_len - 1] + "…") if len(s) > max_len else s
 
 
 def make_markdown_report(
     date_str: str,
-    timezone_name: str,
     grouped_items: List[Tuple[str, List[Dict[str, Any]]]],
     window_hours: int,
 ) -> str:
     lines: List[str] = []
     lines.append(f"# AI 情报日报 - {date_str}")
     lines.append("")
-    lines.append(f"> 时区：{timezone_name} | 抓取窗口：近 {window_hours} 小时")
+    lines.append(f"> 抓取窗口：近 {window_hours} 小时（按 UTC 过滤）")
     total = sum(len(items) for _, items in grouped_items)
     lines.append("")
     lines.append(f"共收录 {total} 条更新，按来源分组如下：")
@@ -87,37 +85,35 @@ def make_markdown_report(
 
 def update_readme_latest(readme_path: Path, date_str: str) -> None:
     link = f"daily_reports/{date_str}.md"
-    latest_block = (
-        "<!--LATEST_START-->",
-        f"最新日报：[{date_str}]({link})",
-        "<!--LATEST_END-->",
-    )
+    start_tag = "<!--LATEST_START-->"
+    end_tag = "<!--LATEST_END-->"
+    latest_line = f"最新日报：[{date_str}]({link})"
+
     if not readme_path.exists():
         content = [
             "AI 情报仓库（AI Intelligence Hub）",
             "",
             "最新日报",
-            latest_block[0],
-            latest_block[1],
-            latest_block[2],
+            start_tag,
+            latest_line,
+            end_tag,
             "",
         ]
         readme_path.write_text("\n".join(content), encoding="utf-8")
         return
 
     text = readme_path.read_text(encoding="utf-8")
-    start = text.find(latest_block[0])
-    end = text.find(latest_block[2])
-    if start != -1 and end != -1 and start < end:
-        new_text = text[: start + len(latest_block[0])] + "\n" + latest_block[1] + "\n" + text[end:]
+    s = text.find(start_tag)
+    e = text.find(end_tag)
+    if s != -1 and e != -1 and s < e:
+        new_text = text[: s + len(start_tag)] + "\n" + latest_line + "\n" + text[e:]
         readme_path.write_text(new_text, encoding="utf-8")
     else:
-        # append block
         with readme_path.open("a", encoding="utf-8") as f:
             f.write("\n最新日报\n")
-            f.write(latest_block[0] + "\n")
-            f.write(latest_block[1] + "\n")
-            f.write(latest_block[2] + "\n")
+            f.write(start_tag + "\n")
+            f.write(latest_line + "\n")
+            f.write(end_tag + "\n")
 
 
 def main() -> int:
@@ -125,21 +121,17 @@ def main() -> int:
     parser.add_argument("--hours", type=int, default=None, help="Time window in hours (override env)")
     args = parser.parse_args()
 
-    # load env
-    if os.path.exists(".env"):
-        load_dotenv(".env")
-
-    timezone_name = get_env("TIMEZONE", "Asia/Shanghai")
-    window_hours = args.hours if args.hours is not None else int(get_env("REPORT_TIME_WINDOW_HOURS", "24"))
-    max_items_per_source = int(get_env("MAX_ITEMS_PER_SOURCE", "20"))
-    http_timeout = int(get_env("HTTP_TIMEOUT", "15"))
-    user_agent = get_env("USER_AGENT", "ai-intelligence-hub/1.0")
+    # env
+    window_hours = args.hours if args.hours is not None else int(os.getenv("REPORT_TIME_WINDOW_HOURS", "24"))
+    max_items_per_source = int(os.getenv("MAX_ITEMS_PER_SOURCE", "20"))
+    http_timeout = int(os.getenv("HTTP_TIMEOUT", "15"))
+    user_agent = os.getenv("USER_AGENT", "ai-intelligence-hub/1.0")
 
     # time window
-    now_utc = utcnow()
-    window_start = now_utc - timedelta(hours=window_hours)
+    now = now_utc()
+    window_start = now - timedelta(hours=window_hours)
 
-    # load sources
+    # sources
     sources = load_sources(Path("config/sources.yml"))
 
     collected: List[Tuple[str, List[Dict[str, Any]]]] = []
@@ -152,36 +144,39 @@ def main() -> int:
             continue
         items: List[Dict[str, Any]] = []
         try:
-            resp = http_get(url, timeout=http_timeout, user_agent=user_agent)
+            headers = {
+                "User-Agent": user_agent,
+                "Accept": "application/rss+xml, application/atom+xml, text/xml, */*",
+            }
+            resp = requests.get(url, headers=headers, timeout=http_timeout)
+            resp.raise_for_status()
             feed = feedparser.parse(resp.content)
             for entry in feed.entries[: max_items_per_source]:
                 dt = parse_entry_datetime(entry)
                 if dt is None or dt < window_start:
                     continue
                 title = (entry.get("title") or "").strip()
-                link = normalize_url(entry.get("link") or "")
-                summary = extract_text(entry.get("summary") or entry.get("description") or "")
+                link = (entry.get("link") or "").strip()
+                summary = plain_text(entry.get("summary") or entry.get("description") or "")
                 items.append({"title": title, "link": link, "summary": summary, "dt": dt})
         except Exception as e:
-            # record error as a pseudo item for transparency
             items.append({
                 "title": f"[抓取失败] {name}",
                 "link": url,
                 "summary": f"错误：{e}",
-                "dt": now_utc,
+                "dt": now,
             })
         collected.append((name, items))
 
-    # output
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    # output file uses CST date for user friendliness
+    _, cst_date = today_strings()
     out_dir = Path("daily_reports")
     ensure_dir(str(out_dir))
-    out_file = out_dir / f"{date_str}.md"
-    content = make_markdown_report(date_str, timezone_name, collected, window_hours)
+    out_file = out_dir / f"{cst_date}.md"
+    content = make_markdown_report(cst_date, collected, window_hours)
     out_file.write_text(content, encoding="utf-8")
 
-    # update README latest section
-    update_readme_latest(Path("README.md"), date_str)
+    update_readme_latest(Path("README.md"), cst_date)
 
     print(f"Generated report: {out_file}")
     return 0
@@ -189,4 +184,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

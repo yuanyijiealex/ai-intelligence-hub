@@ -277,6 +277,9 @@ def main() -> int:
             return "大模型与平台"
         if {"llm", "platform"} & tset:
             return "大模型与平台"
+        # 开源生态：社区/开源相关标签
+        if {"oss", "open-source", "opensource", "github", "community"} & tset:
+            return "开源生态"
         if {"research", "arxiv"} & tset:
             return "研究与论文"
         if {"company"} & tset:
@@ -285,7 +288,7 @@ def main() -> int:
             return "工具与框架"
         return "其他与综合"
 
-    columns_order = ["大模型与平台", "研究与论文", "公司与产品", "工具与框架", "其他与综合"]
+    columns_order = ["大模型与平台", "开源生态", "研究与论文", "公司与产品", "工具与框架", "其他与综合"]
     bucket: Dict[str, List[Dict[str, Any]]] = {k: [] for k in columns_order}
     for src_name, items in collected:
         tags = source_tags_map.get(src_name, [])

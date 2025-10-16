@@ -134,20 +134,21 @@ def make_markdown_report(
     lines.append("")
     # 资讯分栏
     lines.append("## 资讯分栏")
-    if column_groups:
+    if column_groups is not None:
         for col_name, items in column_groups:
-            if not items:
-                continue
             lines.append(f"### {col_name} ({len(items)})")
             lines.append("")
-            for it in items:
-                title = it.get("title") or "(无标题)"
-                link = it.get("link") or ""
-                src = it.get("source") or ""
-                dt = it.get("dt")
-                dt_str = dt.strftime("%Y-%m-%d %H:%M UTC") if isinstance(dt, datetime) else ""
-                lines.append(f"- [{title}]({link}) · 来源: {src}{(' · ' + dt_str) if dt_str else ''}")
-            lines.append("")
+            if items:
+                for it in items:
+                    title = it.get("title") or "(无标题)"
+                    link = it.get("link") or ""
+                    src = it.get("source") or ""
+                    dt = it.get("dt")
+                    dt_str = dt.strftime("%Y-%m-%d %H:%M UTC") if isinstance(dt, datetime) else ""
+                    lines.append(f"- [{title}]({link}) · 来源: {src}{(' · ' + dt_str) if dt_str else ''}")
+                lines.append("")
+            else:
+                lines.append("- （暂无）\n")
     else:
         lines.append("（暂无分栏数据）\n")
 
@@ -268,8 +269,14 @@ def main() -> int:
     highlights = pick_highlights(collected, alerts, limit=5)
 
     # build column groups by source tags
-    def categorize(tags: List[str]) -> str:
+    def categorize(tags: List[str], src_name: str) -> str:
         tset = {t.lower() for t in (tags or [])}
+        name_l = (src_name or "").lower()
+        # 大模型与平台：匹配常见厂商或标签
+        if any(k in name_l for k in ["openai", "hugging face", "anthropic", "google ai", "deepmind", "meta ai", "stability"]):
+            return "大模型与平台"
+        if {"llm", "platform"} & tset:
+            return "大模型与平台"
         if {"research", "arxiv"} & tset:
             return "研究与论文"
         if {"company"} & tset:
@@ -278,11 +285,11 @@ def main() -> int:
             return "工具与框架"
         return "其他与综合"
 
-    columns_order = ["研究与论文", "公司与产品", "工具与框架", "其他与综合"]
+    columns_order = ["大模型与平台", "研究与论文", "公司与产品", "工具与框架", "其他与综合"]
     bucket: Dict[str, List[Dict[str, Any]]] = {k: [] for k in columns_order}
     for src_name, items in collected:
         tags = source_tags_map.get(src_name, [])
-        col = categorize(tags)
+        col = categorize(tags, src_name)
         for it in items:
             # copy minimal fields + source tag
             bucket[col].append({

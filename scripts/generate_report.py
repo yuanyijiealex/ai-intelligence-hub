@@ -135,8 +135,8 @@ def make_markdown_report(
     # 资讯分栏
     lines.append("## 资讯分栏")
     if column_groups is not None:
-        for col_name, items in column_groups:
-            lines.append(f"### {col_name} ({len(items)})")
+        for idx, (col_name, items) in enumerate(column_groups, start=1):
+            lines.append(f"### {idx}. {col_name} ({len(items)})")
             lines.append("")
             if items:
                 for it in items:
@@ -287,11 +287,12 @@ def main() -> int:
             return "论文与基准"
         if {"company"} & tset:
             return "公司与产品"
-        if {"tools"} & tset:
-            return "工具与框架"
+        # 工程与工具链：工程实践/工具/框架/SDK/DevOps/CI/CD/构建等
+        if {"tools", "tool", "framework", "sdk", "devtools", "engineering", "infra", "ci", "build", "ops", "devops"} & tset:
+            return "工程与工具链"
         return "其他与综合"
 
-    columns_order = ["大模型与平台", "开源生态", "论文与基准", "公司与产品", "工具与框架", "其他与综合"]
+    columns_order = ["大模型与平台", "开源生态", "论文与基准", "公司与产品", "工程与工具链", "其他与综合"]
     bucket: Dict[str, List[Dict[str, Any]]] = {k: [] for k in columns_order}
     for src_name, items in collected:
         tags = source_tags_map.get(src_name, [])

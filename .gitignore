@@ -1,0 +1,75 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Env
+.env
+
+# OS / Editors
+.DS_Store
+.idea/
+.vscode/
+
+# Windows系统文件
+NTUSER.DAT*
+ntuser.dat*
+*.regtrans-ms
+*.blf
+*.TxR.*
+*.TM.*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# 用户配置文件和应用数据
+.claude/
+.claude.json*
+.claude_github_config.bat
+.gitconfig
+.aws/
+.azure/
+.codeium/
+.codeverse/
+.codex/
+.config/
+.cursor/
+.kiro/
+.leigod/
+.lingma/
+.marscode/
+.matplotlib/
+.npm-global/
+.qoder/
+.rustup/
+.ssh/
+.streamlit/
+.trae-cn/
+.vscode/
+.windsurf/
+.lesshst
+.nodemid
+.npmrc
+.wslconfig
+AppData/
+Application Data/
+Cookies/
+Local Settings/
+NetHood/
+PrintHood/
+Recent/
+SendTo/
+Templates/
+OneDrive/
+WPS Cloud Files/
+WPSDrive/
+xwechat_files/
+
+# 临时文件
+*.tmp
+*.temp
+*.log
+*.bak
+*.backup
+nul

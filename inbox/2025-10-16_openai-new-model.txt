@@ -1,0 +1,1 @@
+OpenAI 今天发布了新模型，降价并支持更多多模态能力。参考：https://example.com/openai
